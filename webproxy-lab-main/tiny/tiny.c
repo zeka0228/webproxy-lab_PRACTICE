@@ -95,7 +95,7 @@ void doit(int fd){
   }
 }
 
-void clenterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg){
+void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg){
   char buf[MAXLINE], body[MAXBUF];
   
   //sprintf = 출력 X, 우측을 좌측 버퍼에 덮어쓰기 방식으로 저장, 앞에 매번 body를 두는것도 그 때문문
@@ -117,6 +117,7 @@ void clenterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg
 
 
 
+//헤더 내용 무시 함수 : 바로 body에서 시작할 수 있게 빈 줄 나올때까지 패스 
 void read_requesthdrs(rio_t *rp){
   char buf[MAXLINE];
   Rio_readlineb(rp,buf,MAXLINE);
@@ -171,20 +172,19 @@ int parse_uri(char *uri, char *filename, char *cgiargs){
 void serve_static(int fd, char *filename, int filesize){
   int srcfd;
   char *srcp, filetype[MAXLINE], buf[MAXBUF];
-
-  get_filetype(filename, filetype);
+  int len = 0;
 
   //응답 헤더 만들기
   //get filetype => MIME 타입 찾아옴
   get_filetype(filename, filetype);
-  sprintf(buf, "HTTP/1.0 200 OK\r\n");
-  sprintf(buf, "%sServer: Tiny Web Server\r\n", buf);
-  sprintf(buf, "%sConnection: close\r\n", buf);
-  sprintf(buf, "%sContent-length: %d\r\n", buf, filesize);
-  sprintf(buf, "%sContent-type: %s\r\n\r\n", buf, filetype);
-  Rio_writen(fd, buf, strlen(buf));
-  printf("Response headers:\n");
-  printf("%s", buf);
+  len += sprintf(buf + len, "HTTP/1.0 200 OK\r\n");
+  len += sprintf(buf + len, "Server: Tiny Web Server\r\n");
+  len += sprintf(buf + len, "Connection: close\r\n");
+  len += sprintf(buf + len, "Content-length: %d\r\n", filesize);
+  len += sprintf(buf + len, "Content-type: %s\r\n\r\n", filetype);
+
+  Rio_writen(fd, buf, len);
+  printf("Response headers:\n%s", buf);
 
   //응답 바디 만들기
 
