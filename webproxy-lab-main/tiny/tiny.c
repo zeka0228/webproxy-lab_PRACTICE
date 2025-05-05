@@ -12,13 +12,14 @@
 void doit(int fd);
 void read_requesthdrs(rio_t *rp);
 int parse_uri(char *uri, char *filename, char *cgiargs);
-void serve_static(int fd, char *filename, int filesize);
+void serve_static(int fd, char *filename, int filesize, char *method);
 void get_filetype(char *filename, char *filetype);
-void serve_dynamic(int fd, char *filename, char *cgiargs);
+void serve_dynamic(int fd, char *filename, char *cgiargs, char *method);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg,
                  char *longmsg);
 
 int main(int argc, char **argv) {
+  signal(SIGPIPE, SIG_IGN); // 끊김 방지지
   int listenfd, connfd;
   char hostname[MAXLINE], port[MAXLINE];
   socklen_t clientlen;
@@ -57,7 +58,7 @@ void doit(int fd){
   printf("리퀘스트 헤더 : \n");
   printf("%s", buf);
   sscanf(buf, "%s %s %s", method, uri, version);
-  if(strcasecmp(method, "GET")){ //대소문자 구분 없이 두 인자 비교, 같으면 0
+  if(strcasecmp(method, "GET") * strcasecmp(method, "HEAD")){ //대소문자 구분 없이 두 인자 비교, 같으면 0
     clienterror(fd, method, "501", "Not implemented", "tiny does not implement this method");
     return;
   }
@@ -80,7 +81,7 @@ void doit(int fd){
       return;
     }
     //정규 콘텐츠 반환
-    serve_static(fd, filename, sbuf.st_size);
+    serve_static(fd, filename, sbuf.st_size, method);
   }
   
   //동적 콘텐츠일 때
@@ -91,7 +92,7 @@ void doit(int fd){
     }
 
     //동적 콘텐츠 반환
-    serve_dynamic(fd, filename, cgiargs);
+    serve_dynamic(fd, filename, cgiargs, method);
   }
 }
 
@@ -169,7 +170,7 @@ int parse_uri(char *uri, char *filename, char *cgiargs){
 }
 
 //정적 콘텐츠 처리
-void serve_static(int fd, char *filename, int filesize){
+void serve_static(int fd, char *filename, int filesize, char *method){
   int srcfd;
   char *srcp, filetype[MAXLINE], buf[MAXBUF];
   int len = 0;
@@ -186,18 +187,28 @@ void serve_static(int fd, char *filename, int filesize){
   Rio_writen(fd, buf, len);
   printf("Response headers:\n%s", buf);
 
+  if (strcasecmp(method, "HEAD") == 0)
+      return;
   //응답 바디 만들기
 
   //filenmae 경로로, O_RDONLY = 읽기 전용으로 열기, 최우측은 파일 생성 모드(=읽기 전용이라 0)
   srcfd = Open(filename, O_RDONLY, 0);
 
   //0 : 주소 지정 x(커널이 자동 선택) filsize만큼 READ 가능하게 매핑, 읽기 전용 사본 매핑(PRIVATE = 디스크 반영 X)으로 srcfd 매핑 (오프셋 0 = 처음부터 매핑)
-  srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
+  // srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
+  
+  srcp = (char*)malloc(filesize);
+  Rio_readn(srcfd, srcp, filesize);
+
+
   Close(srcfd);
+
   Rio_writen(fd, srcp, filesize);
 
   //매핑 해제
-  Munmap(srcp, filesize);
+  // Munmap(srcp, filesize);
+
+  free(srcp);
 }
 
 
@@ -212,12 +223,14 @@ void get_filetype(char *filename, char *filetype){
       strcpy(filetype, "image/png");
   else if (strstr(filename, ".jpg"))
       strcpy(filetype, "image/jpeg");
+  else if (strstr(filename, ".mp4"))
+      strcpy(filetype, "video/mp4");
   else
       strcpy(filetype, "text/plain");
 }
 
 
-void serve_dynamic(int fd, char *filename, char *cgiargs){
+void serve_dynamic(int fd, char *filename, char *cgiargs, char *method){
 
   char buf[MAXLINE], *emptylist[] = {NULL};
 
@@ -225,12 +238,14 @@ void serve_dynamic(int fd, char *filename, char *cgiargs){
   Rio_writen(fd, buf, strlen(buf));
   sprintf(buf, "Server: Tiny Web Server\r\n");
   Rio_writen(fd, buf, strlen(buf));
+  
 
   //자식 프로세스 생성
   if(Fork() == 0){
 
     //환경변수 설정 : QUERY_STRING에 cgiargs 저장, 덮어쓰기 여부(1이면 덮어쓰기)
     setenv("QUERY_STRING", cgiargs, 1);
+    setenv("REQUEST_METHOD", method, 1);
 
     //oldfile(fd)를 newfile(STDOUT_FILENO(1로 매크로))로 덮어쓰기 + 기존 newfile이 가리키던 파일 디스크립터는 닫힘 = 리다이랙션
     //기존 1이 터미널이어서, 터미널(콘솔) 출력이 이루어졌다면, 해당 fd가 덮어씌워졌으니 클라에게 직접 전송됨
