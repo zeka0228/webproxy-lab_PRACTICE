@@ -55,8 +55,9 @@ void doit(int fd){
   //요청 라인 + 헤더 읽기
   Rio_readinitb(&rio, fd);
   Rio_readlineb(&rio, buf, MAXLINE);
+
   printf("리퀘스트 헤더 : \n");
-  printf("%s", buf);
+  printf("%s", buf);  
   sscanf(buf, "%s %s %s", method, uri, version);
   if(strcasecmp(method, "GET") * strcasecmp(method, "HEAD")){ //대소문자 구분 없이 두 인자 비교, 같으면 0
     clienterror(fd, method, "501", "Not implemented", "tiny does not implement this method");
@@ -256,3 +257,5 @@ void serve_dynamic(int fd, char *filename, char *cgiargs, char *method){
   //자식 프로세스 reap 될때까지 대기
   Wait(NULL);
 }
+
+
