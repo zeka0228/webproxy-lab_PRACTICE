@@ -19,7 +19,7 @@ typedef struct _Cache_node
   struct _Cache_node *prev;
 }cache_node;
 
-
+void *thread(void *vargp);
 void parse_uri(char *uri, char *sitename, char *prtn, char *path);
 void doit(int fd);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
@@ -39,11 +39,13 @@ int main(int argc, char **argv) {
   printf("%s", user_agent_hdr);
 
   can_inesrt_size = MAX_CACHE_SIZE;
+  pthread_t tid;
 
-  int listenfd, connfd;
+  int listenfd, *connfd;
   char hostname[MAXLINE], port[MAXLINE];
   socklen_t clientlen;
   struct sockaddr_storage clientaddr;
+  
 
   /* Check command line args */
   if (argc != 2) {
@@ -54,12 +56,23 @@ int main(int argc, char **argv) {
   listenfd = Open_listenfd(argv[1]);
   while (1) {
     clientlen = sizeof(clientaddr);
-    connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);  
+    connfd = Malloc(sizeof(int));
+    *connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);  
     Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE, 0);
     printf("Accepted connection from (%s, %s)\n", hostname, port);
-    doit(connfd);  
-    Close(connfd);  
+    Pthread_create(&tid, NULL, thread, connfd);
+
   }
+}
+
+
+void *thread(void *vargp){
+  int fd = *((int *)vargp);
+  Pthread_detach(pthread_self());
+  Free(vargp);
+  doit(fd);
+  Close(fd);
+  return NULL;
 }
 
 void doit(int fd){
