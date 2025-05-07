@@ -90,7 +90,9 @@ void doit(int fd){
   cache_node *rp_cache = find_cache(uri);
   //있으면
   if(rp_cache){
+    
     Rio_writen(fd, rp_cache->response_ptr, rp_cache->total_length);
+    return;
   }
 
   //없으면
@@ -133,7 +135,7 @@ void doit(int fd){
       Rio_writen(fd, RP_buf, n);
 
       if(cache_flag){
-        if(total_len + n > MAX_OBJECT_SIZE){
+        if(total_len + n >= MAX_OBJECT_SIZE){
           cache_flag = 0;
           free(CH_buf);
           CH_buf = NULL;
@@ -144,59 +146,14 @@ void doit(int fd){
         }
 
       }
-
-      //RP_buf의 앞 15바이트 확인, 같을시 0
-      //atoi = str -> ASCII to Integer
-      if(strncasecmp(RP_buf, "Content-Length:", 15 ) == 0){
-        if (sscanf(RP_buf + 15, "%d", &content_len) != 1) {
-        // 에러 처리: content_len 파싱 실패
-          content_len = 0;
-        }
-      }
-
-      if(strcmp(RP_buf, "\r\n") == 0) break;
     }
-
-      //바디 읽기
-      if(content_len > 0){
-        char *body = malloc(content_len);
-
-      //body 메모리 확보 실패 시
-      if (body == NULL) {
-        if (CH_buf) 
-          free(CH_buf);
-        close(RP_clientfd);
-        return;
-      }
-
-
-
-      //Rio_readn(&RP_rio, body, content_len);
-      Rio_readn(RP_clientfd, body, content_len);
-      Rio_writen(fd, body, content_len);
-
-      if(cache_flag) {
-        if(total_len + content_len <= MAX_OBJECT_SIZE){
-          memcpy(CH_buf + total_len, body, content_len);
-          total_len += content_len;
-        }
-        else{
-          cache_flag = 0;
-          free(CH_buf);
-          CH_buf = NULL;
-        }
-      }        
-      free(body);  
-      body = NULL;
-    }
-
 
 
     close(RP_clientfd);
     //캐시 저장조건 체크 - 저장 가능하면
     if(cache_flag){
+      printf("[DEBUG] Caching %s (%d bytes)\n", uri, total_len);
       insert_cache(CH_buf, uri, total_len);
-      free(CH_buf);
     }
 
   }
